@@ -20,7 +20,6 @@ import tempfile
 from pathlib import Path
 from typing import Union
 
-from . import callgraph
 from .schema import RouterSignal, W2Evidence
 
 RepoBefore = Union[str, dict]
@@ -35,7 +34,7 @@ def _mypy_available() -> bool:
 
 
 _MYPY_ON = _mypy_available()
-RESOLVER_ID = f"symbolic:pycompile+pyflakes+mypy(strict={'on' if _MYPY_ON else 'off'});callgraph=symbolic-import-name"
+RESOLVER_ID = f"symbolic:pycompile+pyflakes+mypy(strict={'on' if _MYPY_ON else 'off'});callgraph=pending"
 
 
 def _write(src: str, stem: str) -> Path:
@@ -97,20 +96,11 @@ def resolve_w2(unit, repo_before: RepoBefore = None, patch: str = None) -> W2Evi
     comp = bool(base.get("compile_ok") and not var.get("compile_ok"))
     name = bool(base.get("pyflakes_ok") and not var.get("pyflakes_ok"))
     typ = bool(base.get("mypy_ok") is True and var.get("mypy_ok") is False)
-    # Cross-file forced closure (call-graph / import-graph): does reverting THIS
-    # unit leave another module referencing a name this file no longer defines?
-    # Single-file repos have no cross-module edges, so this stays False there and
-    # the single-file W2 result is byte-for-byte unchanged.
-    repo_aud = getattr(unit, "_repo_audited", None)
-    repo_rev = getattr(unit, "_repo_reverted", None)
-    imports = False
-    if isinstance(repo_aud, dict) and isinstance(repo_rev, dict) and len(repo_aud) > 1:
-        imports = callgraph.newly_broken_crossfile(repo_aud, repo_rev)
     return W2Evidence(
         revert_breaks_compile=comp,
         revert_breaks_name_resolution=name or typ,
-        revert_breaks_imports=imports,
-        resolver_confirmed_closure=(comp or name or typ or imports),
+        revert_breaks_imports=False,  # explicit import-graph closure = pending call-graph work
+        resolver_confirmed_closure=(comp or name or typ),
     )
 
 
