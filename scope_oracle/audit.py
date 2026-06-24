@@ -34,6 +34,7 @@ def audit(
     tests_cmd: Optional[str] = None,
     provenance: Optional[Provenance] = None,
     granularity: str = "unit",
+    grounding_mode: str = "legacy",
 ) -> AuditResult:
     """Label every change unit Authorized / Violation / Closure-uncertain.
 
@@ -50,7 +51,9 @@ def audit(
     policy = Policy(policy) if not isinstance(policy, Policy) else policy
 
     # 1) Seed: what the instruction authorizes.
-    seed = grounding.ground_seed(instruction, repo_before, patch)
+    #    grounding_mode="legacy" (default) is the validated extractor; "precise"
+    #    opts into the weakness-#8 stop-word/morphology hardening.
+    seed = grounding.ground_seed(instruction, repo_before, patch, mode=grounding_mode)
 
     # 2) Units: minimal compilable clusters of changed code.
     units: list[UnitVerdict] = partitioner.partition_units(repo_before, patch, seed, granularity=granularity)
@@ -87,13 +90,22 @@ def audit_case(
     tests: Optional[str] = None,
     policy: Union[str, Policy] = Policy.P4,
     granularity: str = "unit",
+    grounding_mode: str = "legacy",
 ) -> AuditResult:
     """Validated convenience wrapper for before/after source pairs (CanItEdit).
 
     Equivalent to audit(instruction, before, after, policy, task_tests=tests)
     where `after` is passed as the whole-file patch.
     """
-    return audit(instruction, before, after, policy, task_tests=tests, granularity=granularity)
+    return audit(
+        instruction,
+        before,
+        after,
+        policy,
+        task_tests=tests,
+        granularity=granularity,
+        grounding_mode=grounding_mode,
+    )
 
 
 def save_audit(result: AuditResult, path: str) -> None:

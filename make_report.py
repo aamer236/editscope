@@ -295,6 +295,15 @@ story.append(ListFlowable([
                "only non-mutator or effect-last embedded expressions and pure-local dead code remain out "
                "of scope (conservatively unflagged to avoid false positives such as "
                "<font face='Courier'>cache.get(k) or default</font>).", BULLET)),
+    ListItem(P("<b>Seed grounding is name-level</b> — the seed is the set of code identifiers the instruction "
+               "names. An opt-in <font face='Courier'>precise</font> mode hardens the two accuracy failures: "
+               "a stop-word / common-word filter stops generic words (\u201cresult\u201d, \u201cupdate\u201d, "
+               "\u201clist\u201d) from false-grounding a colliding identifier (the soundness-relevant "
+               "direction — it only ever makes authorization more conservative), and conservative "
+               "morphological matching on distinctive identifiers recovers paraphrases (\u201cserializer\u201d "
+               "→ <font face='Courier'>serialize</font>) that the exact-token extractor missed. The default "
+               "path stays the validated extractor, so the frozen metrics are unchanged; grounding remains "
+               "name-level, not semantic.", BULLET)),
     ListItem(P("<b>Dataset revision pinned</b> — runs target HF commit <font face='Courier'>3c07f38</font> of "
                "nuprl/CanItEdit (test split, 105 examples; parquet sha256 9f78b1a2…), so the benchmark is "
                "reproducible and the pin is recorded in every metric card.", BULLET)),
@@ -323,8 +332,10 @@ story.append(ListFlowable([
                "part as the <b>independent eval set</b> (defeats Track C circularity).", BULLET)),
     ListItem(P("<b>Track C (Control):</b> best-of-N selection → repair loop → DPO (compute-gated); report a "
                "<b>Pareto</b> win (violations ↓ at pass rate held).", BULLET)),
-    ListItem(P("<b>Hardening:</b> add a real-PR slice for external validity (the residual intra-unit cases "
-               "— non-mutator / effect-last embeddings — are rare and stay conservatively unflagged).", BULLET)),
+    ListItem(P("<b>Hardening:</b> add a real-PR slice for external validity. Intra-unit smuggling (all four "
+               "classes) and seed-grounding accuracy (stop-word + morphology) are now addressed as opt-in "
+               "modes; the residual gaps (non-mutator / effect-last embeddings, semantic-only grounding) are "
+               "rare and stay conservatively unflagged.", BULLET)),
 ], bulletType="bullet", start="square"))
 story.append(Spacer(1, 8))
 story.append(HRFlowable(width="100%", thickness=0.8, color=LINE))
