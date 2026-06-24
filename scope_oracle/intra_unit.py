@@ -2,24 +2,42 @@
 
 The frozen function-level partitioner has a known blind spot (plan §3.4): an
 out-of-scope side effect SMUGGLED inside an otherwise seed-authorized function
-rides along under the function's seed warrant and is never flagged.
+(or method) rides along under that unit's seed warrant and is never flagged.
 
-This module decomposes a seed-authorized function into statement-level
-sub-units and surfaces *added, side-effecting* statements that are NOT part of
-the edit's return/seed closure as their own units, so the policy re-examines
-them under the normal sound rule (seed ∪ W2; else routed/flagged).
+This module decomposes a seed-authorized function/method into statement-level
+sub-units and surfaces *added, side-effecting* statements as their own units,
+so the policy re-examines each one under the normal sound rule (seed ∪ W2;
+else routed/flagged).
 
 SYMBOLIC ONLY. No LLM, no execution. Conservative by construction: it only
-ever EMITS extra candidate units (it never authorizes), so it cannot break the
-soundness invariant. Default audit() granularity stays "unit", so the validated
-single-file path is byte-for-byte unchanged; this runs only when the caller
-opts into granularity="statement".
+ever EMITS extra candidate units (warrant NONE) — it never authorizes — so it
+cannot break the soundness invariant. Default audit() granularity stays
+"unit", so the validated single-file path is byte-for-byte unchanged; this runs
+only when the caller opts into granularity="statement".
 
-Scope / limits (honest): catches separable side-effecting smuggles in
-top-level functions — discarded calls (`log(x)`), attribute/subscript/global
-mutation of non-return state. Out of scope (treated as no-finding): smuggles
-that feed the return value, pure-local dead code, methods inside classes,
-and control-flow-entangled creep. Downgrades weakness #9, does not close it.
+Coverage (what is surfaced as a candidate smuggle):
+  * separable side-effecting statements in seed-authorized TOP-LEVEL functions
+    (discarded calls like `log(x)` / `lst.append(y)`; attribute / subscript
+    mutation like `obj.attr = ...`, `d[k] = ...`; rebinding a declared global);
+  * the same, inside METHODS of a class — when either the method name or its
+    enclosing class name is in the seed (in-class smuggles);
+  * RETURN-FEEDING smuggles: a statement that performs one of the external
+    side effects above is now surfaced even when its value also flows into the
+    function's return (previously such statements were masked by the return
+    backward-slice).
+
+Out of scope (treated as no-finding, honest limits):
+  * a side effect embedded directly inside a return / operand expression
+    (e.g. `return lst.append(x) or value`) — not separable as its own line;
+  * pure-local dead code that never escapes the frame (no external write,
+    no return contribution);
+  * control-flow-entangled creep woven through branches/loops.
+
+Precision note: seed grounding is NAME-level, not semantic, so statement mode
+can over-surface a side effect the instruction legitimately asked for (it has
+no way to know `append` was authorized). It therefore trades precision for
+recall and only ever raises *candidates* for review — it never authorizes.
+Downgrades weakness #9, does not close it.
 """
 from __future__ import annotations
 
@@ -33,15 +51,6 @@ def _reads(node: ast.AST) -> set:
             out.add(n.id)
         elif isinstance(n, ast.Attribute):
             out.add(n.attr)
-    return out
-
-
-def _local_writes(node: ast.AST) -> set:
-    """Plain local names bound by this statement (Name Store targets only)."""
-    out: set = set()
-    for n in ast.walk(node):
-        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
-            out.add(n.id)
     return out
 
 
@@ -73,45 +82,52 @@ def _func_global_names(fn: ast.AST) -> set:
     return out
 
 
-def _return_relevant(body: list, seed_names: set) -> set:
-    """id()s of statements in the return/seed backward slice (fixpoint).
-
-    A statement is relevant if it (transitively) defines a name read by a
-    `return`, or reads/writes a seed name. Side-effecting smuggles that feed
-    nothing returned are, by design, NOT relevant.
-    """
-    needed: set = set(seed_names)
-    for stmt in body:
-        for r in ast.walk(stmt):
-            if isinstance(r, ast.Return) and r.value is not None:
-                needed |= _reads(r.value)
-    relevant: set = set()
-    changed = True
-    while changed:
-        changed = False
-        for stmt in body:
-            if id(stmt) in relevant:
-                continue
-            writes = _local_writes(stmt)
-            reads = _reads(stmt)
-            if (writes & needed) or (reads & seed_names) or (writes & seed_names):
-                relevant.add(id(stmt))
-                if needed | reads != needed:
-                    needed |= reads
-                    changed = True
-    return relevant
-
-
 def _body_stmt_strings(body: list) -> list:
     return [ast.dump(s) for s in body]
 
 
-def find_smuggles(after_src: str, before_src: str, seed_names: set) -> list:
-    """Return smuggle records for seed-authorized top-level functions.
+def _iter_target_funcs(tree: ast.Module, seed_names: set):
+    """Yield (func_node, qualname) for functions whose smuggles should surface.
 
-    Each record: {name, lineno, end_lineno, loc, reverted_src} where
-    `reverted_src` is `after_src` with exactly the smuggled statement removed
-    (so the W2 resolver / W1 router can evaluate it via the normal path).
+    Targets are seed-authorized callables:
+      * a TOP-LEVEL function whose name is in the seed;
+      * a METHOD whose own name is in the seed, OR whose enclosing class name
+        is in the seed (so a smuggle inside a seed-authorized class is caught).
+    """
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name in seed_names:
+                yield node, node.name
+        elif isinstance(node, ast.ClassDef):
+            class_seeded = node.name in seed_names
+            for sub in node.body:
+                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if class_seeded or sub.name in seed_names:
+                        yield sub, f"{node.name}.{sub.name}"
+
+
+def _before_bodies(before_tree) -> dict:
+    """Map qualname -> statement body for every before-side function/method."""
+    out: dict = {}
+    if before_tree is None:
+        return out
+    for node in before_tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out[node.name] = node.body
+        elif isinstance(node, ast.ClassDef):
+            for sub in node.body:
+                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    out[f"{node.name}.{sub.name}"] = sub.body
+    return out
+
+
+def find_smuggles(after_src: str, before_src: str, seed_names: set) -> list:
+    """Return smuggle records for seed-authorized functions and methods.
+
+    Each record: {name, lineno, end_lineno, loc, reverted_src} where `name` is
+    the qualified owner (`func` or `Class.method`) and `reverted_src` is
+    `after_src` with exactly the smuggled statement removed (so the W2 resolver
+    / W1 router can evaluate it via the normal sound path).
     """
     try:
         after_tree = ast.parse(after_src)
@@ -122,34 +138,25 @@ def find_smuggles(after_src: str, before_src: str, seed_names: set) -> list:
     except SyntaxError:
         before_tree = None
 
-    before_funcs = {}
-    if before_tree is not None:
-        for node in before_tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                before_funcs[node.name] = node
-
+    before_bodies = _before_bodies(before_tree)
     after_lines = after_src.splitlines()
     records: list = []
-    for node in after_tree.body:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if node.name not in seed_names:
-            continue
-        bf = before_funcs.get(node.name)
-        before_dumps = _body_stmt_strings(bf.body) if bf is not None else []
-        before_pool = list(before_dumps)
-        global_names = _func_global_names(node)
-        relevant = _return_relevant(node.body, seed_names)
-        for stmt in node.body:
+    for fn, qualname in _iter_target_funcs(after_tree, seed_names):
+        before_pool = list(_body_stmt_strings(before_bodies.get(qualname, [])))
+        global_names = _func_global_names(fn)
+        for stmt in fn.body:
             d = ast.dump(stmt)
             # statement present unchanged in the before-body is not "added"
             if d in before_pool:
                 before_pool.remove(d)
                 continue
-            if id(stmt) in relevant:
-                continue
+            # reads a seed name -> treat as part of the authorized seed work
             if _reads(stmt) & seed_names:
                 continue
+            # only surface statements with an EXTERNAL side effect. A statement
+            # is surfaced even when its value also feeds the return value
+            # (return-feeding smuggle); a non-side-effecting return-relevant or
+            # pure-local statement is legitimate and skipped.
             if not _has_side_effect(stmt, global_names):
                 continue
             start = getattr(stmt, "lineno", None)
@@ -161,7 +168,7 @@ def find_smuggles(after_src: str, before_src: str, seed_names: set) -> list:
             if after_src.endswith("\n"):
                 reverted_src += "\n"
             records.append({
-                "name": node.name,
+                "name": qualname,
                 "lineno": start,
                 "end_lineno": end,
                 "loc": end - start + 1,
