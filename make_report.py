@@ -288,8 +288,10 @@ story.append(ListFlowable([
                "treated as no-closure (Uncertain, never Violation).", BULLET)),
     ListItem(P("<b>Intra-unit smuggling</b> is <i>downgraded, not eliminated</i> — opt-in statement-level "
                "granularity now catches separable side-effecting smuggles in top-level functions, "
-               "in class methods, and return-feeding (external-mutation) statements; side effects embedded "
-               "directly inside a return expression and control-flow-entangled creep remain out of scope.", BULLET)),
+               "in class methods, return-feeding (external-mutation) statements, and creep nested inside "
+               "if / for / while / with / try blocks (with a revert guard that keeps the soundness invariant "
+               "intact); only a side effect embedded directly inside a return / operand expression "
+               "(e.g. <font face='Courier'>return lst.append(x) or v</font>) remains out of scope.", BULLET)),
     ListItem(P("<b>Dataset revision pinned</b> — runs target HF commit <font face='Courier'>3c07f38</font> of "
                "nuprl/CanItEdit (test split, 105 examples; parquet sha256 9f78b1a2…), so the benchmark is "
                "reproducible and the pin is recorded in every metric card.", BULLET)),
@@ -318,8 +320,8 @@ story.append(ListFlowable([
                "part as the <b>independent eval set</b> (defeats Track C circularity).", BULLET)),
     ListItem(P("<b>Track C (Control):</b> best-of-N selection → repair loop → DPO (compute-gated); report a "
                "<b>Pareto</b> win (violations ↓ at pass rate held).", BULLET)),
-    ListItem(P("<b>Hardening:</b> add a real-PR slice for external validity; close the residual intra-unit "
-               "gaps (return-embedded side effects, control-flow-entangled creep).", BULLET)),
+    ListItem(P("<b>Hardening:</b> add a real-PR slice for external validity; close the last intra-unit "
+               "gap (a side effect embedded directly inside a return / operand expression).", BULLET)),
 ], bulletType="bullet", start="square"))
 story.append(Spacer(1, 8))
 story.append(HRFlowable(width="100%", thickness=0.8, color=LINE))

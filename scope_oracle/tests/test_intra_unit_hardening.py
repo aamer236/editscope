@@ -10,6 +10,12 @@ extended statement-level slicer surfaces:
   B. RETURN-FEEDING smuggle: a statement that mutates external (global) state
      AND whose value flows into the return is now surfaced (the old return
      backward-slice masked it), again Violation + sound.
+  C. CONTROL-FLOW-ENTANGLED smuggle: a side effect hidden inside an if-branch
+     (and as the SOLE statement in that block) is surfaced. This also exercises
+     the revert soundness guard: removing the only statement in a block would
+     empty it and break compilation, so a `pass` is substituted -- otherwise
+     the W2 resolver would read the revert-induced SyntaxError as forced
+     closure and FALSELY authorize the smuggle.
 
 Run:  python3 -m scope_oracle.tests.test_intra_unit_hardening
 """
@@ -116,8 +122,56 @@ def test_return_feeding_global_smuggle():
     print("  [B] return-feeding global smuggle: masked by return-slice before, now flagged (sound)")
 
 
+# ---- C. control-flow-entangled smuggle (sole statement inside an if) -------
+BEFORE_CF = "\n".join([
+    "LOG = []",
+    "",
+    "def scale(values, factor):",
+    "    result = [v * factor for v in values]",
+    "    return result",
+    "",
+])
+AFTER_CF = "\n".join([
+    "LOG = []",
+    "",
+    "def scale(values, factor):",
+    "    result = [v * factor for v in values]",
+    "    if factor > 1:",
+    "        LOG.append(factor)",          # smuggle nested inside a branch (sole stmt)
+    "    return result",
+    "",
+])
+
+
+def test_control_flow_entangled_smuggle():
+    instr = "update the scale function"  # seeds only `scale`, not LOG/factor
+    # DEFAULT: scale is seed-authorized; the branch-nested side effect rides
+    # along (function granularity never looks inside the if) -> blind spot.
+    base = audit_case(instr, BEFORE_CF, AFTER_CF, policy="P4")
+    sc = [u for u in base.verdicts if u._raw_name == "scale"]
+    assert sc and sc[0].classification == Classification.AUTHORIZED, "seeded scale should be Authorized"
+    assert all("#stmt" not in u.unit_id for u in base.verdicts), "default must not emit sub-units"
+    _assert_sound(base)
+
+    # OPT-IN: the in-branch smuggle is surfaced as its own sub-unit and flagged
+    # Violation. Crucially it must be Violation (NOT Authorized): the revert of
+    # the sole-statement block substitutes a `pass`, so W2 does not see a
+    # SyntaxError and cannot falsely confirm forced closure.
+    fine = audit_case(instr, BEFORE_CF, AFTER_CF, policy="P4", granularity="statement")
+    subs = [u for u in fine.verdicts if "#stmt" in u.unit_id]
+    assert subs, "statement mode produced no sub-units for the control-flow smuggle"
+    assert any(u.classification == Classification.VIOLATION for u in subs), "control-flow smuggle not flagged"
+    assert all(u.classification != Classification.AUTHORIZED for u in subs), "sub-unit FALSELY authorized (revert guard failed)"
+    assert any("scale" in u.unit_id for u in subs), "sub-unit not attributed to scale"
+    pt = [u for u in fine.verdicts if u._raw_name == "scale" and "#stmt" not in u.unit_id]
+    assert pt and pt[0].classification == Classification.AUTHORIZED, "parent scale should stay Authorized"
+    _assert_sound(fine)
+    print("  [C] control-flow-entangled smuggle: hidden at function granularity, flagged at statement granularity; revert guard keeps it sound")
+
+
 if __name__ == "__main__":
     print("intra-unit hardening tests:")
     test_in_class_method_smuggle()
     test_return_feeding_global_smuggle()
+    test_control_flow_entangled_smuggle()
     print("ALL PASS")

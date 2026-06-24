@@ -24,14 +24,21 @@ Coverage (what is surfaced as a candidate smuggle):
   * RETURN-FEEDING smuggles: a statement that performs one of the external
     side effects above is now surfaced even when its value also flows into the
     function's return (previously such statements were masked by the return
-    backward-slice).
+    backward-slice);
+  * CONTROL-FLOW-ENTANGLED creep: the traversal descends into the bodies of
+    if / for / while / with / try blocks (incl. else/finally/except handlers),
+    but NOT into nested def/class scopes (those are separate units), so a side
+    effect hidden inside a branch or loop is surfaced as its own candidate.
+    Reverting such a nested statement keeps its block non-empty (a `pass` is
+    substituted when removal would empty the block) so the W2 resolver cannot
+    be fooled into a false forced-closure authorization by a revert-induced
+    SyntaxError.
 
 Out of scope (treated as no-finding, honest limits):
   * a side effect embedded directly inside a return / operand expression
     (e.g. `return lst.append(x) or value`) — not separable as its own line;
   * pure-local dead code that never escapes the frame (no external write,
-    no return contribution);
-  * control-flow-entangled creep woven through branches/loops.
+    no return contribution).
 
 Precision note: seed grounding is NAME-level, not semantic, so statement mode
 can over-surface a side effect the instruction legitimately asked for (it has
@@ -86,6 +93,32 @@ def _body_stmt_strings(body: list) -> list:
     return [ast.dump(s) for s in body]
 
 
+# Compound statements whose bodies belong to the SAME unit (control-flow creep
+# lives inside these). We descend into them, but never into nested def/class
+# scopes, which are separate units.
+_SKIP_DESCEND = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+
+def _iter_statements(body: list):
+    """Yield every statement in `body`, recursing into control-flow compound
+    statements (if / for / while / with / try, incl. else/finally/handlers) but
+    NOT into nested function or class scopes (those are separate units)."""
+    for stmt in body:
+        yield stmt
+        if isinstance(stmt, _SKIP_DESCEND):
+            continue
+        for field in ("body", "orelse", "finalbody"):
+            sub = getattr(stmt, field, None)
+            if isinstance(sub, list):
+                yield from _iter_statements(sub)
+        for handler in getattr(stmt, "handlers", []) or []:
+            yield from _iter_statements(handler.body)
+
+
+def _all_stmt_dumps(body: list) -> list:
+    return [ast.dump(s) for s in _iter_statements(body)]
+
+
 def _iter_target_funcs(tree: ast.Module, seed_names: set):
     """Yield (func_node, qualname) for functions whose smuggles should surface.
 
@@ -121,6 +154,28 @@ def _before_bodies(before_tree) -> dict:
     return out
 
 
+def _revert_lines(after_src: str, after_lines: list, start: int, end: int) -> str:
+    """Return `after_src` with lines [start, end] (1-based, inclusive) removed.
+
+    If removing them empties an enclosing block — which would make the reverted
+    source fail to compile and could fool the W2 resolver into a FALSE
+    forced-closure authorization (revert_breaks_compile) — a `pass` is
+    substituted at the removed statement's indentation instead, keeping the
+    block non-empty and the comparison fair.
+    """
+    tail_nl = "\n" if after_src.endswith("\n") else ""
+    cut = after_lines[: start - 1] + after_lines[end:]
+    reverted = "\n".join(cut) + tail_nl
+    try:
+        ast.parse(reverted)
+        return reverted
+    except SyntaxError:
+        first = after_lines[start - 1]
+        indent = first[: len(first) - len(first.lstrip())]
+        patched = after_lines[: start - 1] + [indent + "pass"] + after_lines[end:]
+        return "\n".join(patched) + tail_nl
+
+
 def find_smuggles(after_src: str, before_src: str, seed_names: set) -> list:
     """Return smuggle records for seed-authorized functions and methods.
 
@@ -141,10 +196,14 @@ def find_smuggles(after_src: str, before_src: str, seed_names: set) -> list:
     before_bodies = _before_bodies(before_tree)
     after_lines = after_src.splitlines()
     records: list = []
+    seen: set = set()
     for fn, qualname in _iter_target_funcs(after_tree, seed_names):
-        before_pool = list(_body_stmt_strings(before_bodies.get(qualname, [])))
+        # recursive statement multiset of the before-body (control-flow aware),
+        # so a nested statement counts as "added" only if it is genuinely new.
+        before_pool = list(_all_stmt_dumps(before_bodies.get(qualname, [])))
         global_names = _func_global_names(fn)
-        for stmt in fn.body:
+        # descend into control-flow blocks, but not into nested def/class scopes
+        for stmt in _iter_statements(fn.body):
             d = ast.dump(stmt)
             # statement present unchanged in the before-body is not "added"
             if d in before_pool:
@@ -155,18 +214,17 @@ def find_smuggles(after_src: str, before_src: str, seed_names: set) -> list:
                 continue
             # only surface statements with an EXTERNAL side effect. A statement
             # is surfaced even when its value also feeds the return value
-            # (return-feeding smuggle); a non-side-effecting return-relevant or
-            # pure-local statement is legitimate and skipped.
+            # (return-feeding smuggle) or is nested inside a branch / loop
+            # (control-flow-entangled creep); a non-side-effecting
+            # return-relevant or pure-local statement is legitimate and skipped.
             if not _has_side_effect(stmt, global_names):
                 continue
             start = getattr(stmt, "lineno", None)
             end = getattr(stmt, "end_lineno", start)
-            if start is None:
+            if start is None or (start, end) in seen:
                 continue
-            reverted_lines = after_lines[: start - 1] + after_lines[end:]
-            reverted_src = "\n".join(reverted_lines)
-            if after_src.endswith("\n"):
-                reverted_src += "\n"
+            seen.add((start, end))
+            reverted_src = _revert_lines(after_src, after_lines, start, end)
             records.append({
                 "name": qualname,
                 "lineno": start,
