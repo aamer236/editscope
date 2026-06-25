@@ -8,9 +8,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .grounding import extract
-from .mutate import make as make_mutants
-from .partitioner import Unit, changed_units, restore_unit, touched_names
+from scope_oracle.grounding import extract
+from scope_oracle.mutate import make as make_mutants
+from scope_oracle.partitioner import Unit, changed_units, restore_unit, touched_names
 from .resolver import check, newly_broken
 
 POLICIES = ["P1 naive_target_only", "P2 revert_only_w1", "P3 w2_only_strict", "P4 w2_plus_w1_router", "P5 w2_plus_w1_and_resolve_router"]
