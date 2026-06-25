@@ -28,18 +28,11 @@ def _load_dataset(name: str):
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="run_real")
-    ap.add_argument("--dataset", default="canitedit")
-    ap.add_argument("--policy", default="P4", choices=[p.value for p in Policy])
-    ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--out", default="runs/metric_card.json")
-    args = ap.parse_args(argv)
-
-    # from .audit import audit  # enable once primitives are migrated
-    rows = _load_dataset(args.dataset)  # raises until migrated
-    _ = (rows, args)
-    print(json.dumps({"status": "primitives-not-migrated"}))
-    return 0
+    raise SystemExit(
+        "scope_oracle.run_real is an intentional stub, NOT the parity entrypoint.\n"
+        "Use the real CanItEdit parity runner:\n"
+        "    python -m scope_oracle.parity_real --data ./canitedit --limit 102"
+    )
 
 
 if __name__ == "__main__":

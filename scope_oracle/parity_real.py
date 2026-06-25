@@ -26,6 +26,7 @@ import os
 import random
 import statistics
 import sys
+import importlib.metadata as _ilmd
 from pathlib import Path
 
 from . import audit_case
@@ -37,6 +38,12 @@ from .schema import Classification
 
 # Frozen policies only (the audit() API commits to P1 baseline + P4 default).
 POLICIES = ["P1", "P4"]
+CANITEDIT_REVISION = "3c07f38b1f9385f3214fcea94d4664c79df0d36a"  # pinned HF nuprl/CanItEdit commit
+def _pkg_ver(name: str) -> str:
+    try:
+        return _ilmd.version(name)
+    except Exception:
+        return "unknown"
 
 _VIOLATION = Classification.VIOLATION.value
 _AUTHORIZED = Classification.AUTHORIZED.value
@@ -162,6 +169,13 @@ def main(argv=None) -> int:
 
     if root.exists() and not loaded_any:
         skips.append({"problem_id": "dataset", "reason": "no benchmark records found in local checkout"})
+        
+    if attempted == 0 or gold_ok == 0:
+      raise SystemExit(
+         f"Invalid parity run: attempted={attempted}, passed_gold={gold_ok}. "
+         f"No usable CanItEdit examples under {root} (expected .jsonl/.json with "
+         "before/after/instruction). Refusing to report soundness on an empty run."
+        )
 
     Path("results").mkdir(exist_ok=True)
     with open("results/per_unit_oracle.csv", "w", newline="", encoding="utf-8") as f:
@@ -171,7 +185,12 @@ def main(argv=None) -> int:
         wr.writerows(rows)
 
     metrics = {
-        "data_revision": "unpinned",
+        "data_revision": CANITEDIT_REVISION,
+        "resolver_versions": {
+            "python": sys.version.split()[0],
+            "pyflakes": _pkg_ver("pyflakes"),
+            "mypy": _pkg_ver("mypy"),
+            },    
         "source": "frozen audit_case() (scope_oracle.parity_real)",
         "coverage": {"attempted": attempted, "passed_gold": gold_ok, "skipped": skips},
     }
