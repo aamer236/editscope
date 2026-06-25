@@ -12,7 +12,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install optional resolver deps
-        run: pip install -r requirements.txt
+      - name: Install package (verifies pip install -e . + resolver deps)
+        run: pip install -e .
       - name: Freeze tests (soundness invariant + cross-file W2)
         run: python -m scope_oracle.tests.test_audit_freeze
+      - name: Intra-unit hardening (claim #7 regression guard)
+        run: python -m scope_oracle.tests.test_intra_unit_hardening
+      - name: Grounding precision
+        run: python -m scope_oracle.tests.test_grounding_precision
