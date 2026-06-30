@@ -25,30 +25,63 @@ python -m scope_oracle.tests.test_intra_unit_hardening
 # CanItEdit parity slice — requires the pinned dataset available locally:
 python -m scope_oracle.parity_real --data ./canitedit --limit 102
 ```
+
+
 ## Track A — scope-faithful editing benchmark (`track_a/`)
 
 Track A runs coding agents over CanItEdit and scores each edit with the frozen
-`scope_oracle.audit_case()` API. Run every tool as a module from the repo root:
+`scope_oracle.audit_case()` API. Run every tool as a module from the repo root.
 
+### Core pipeline
 ```bash
-# 1. fetch + pin the CanItEdit dataset locally (-> ./canitedit)
+# 1. fetch + pin the CanItEdit dataset locally (-> ./canitedit/canitedit_test.jsonl)
 python -m track_a.fetch_canitedit
 
 # 2. run an agent and log (instruction, before, after) per problem.
-#    --agent dry_run replays gold edits and needs no API key (good smoke test);
-#    model agents call Groq (llama-3.1-8b-instant, llama-3.3-70b-versatile, qwen3-32b).
+#    --agent dry_run replays gold edits, needs no API key (good smoke test).
+#    Model agents: --agent openai (gpt-4o), or --agent groq with
+#      --model llama-3.1-8b-instant | llama-3.3-70b-versatile | qwen/qwen3-32b  (needs GROQ_API_KEY).
+#    Other flags: --prompt-style neutral|scope, --limit N, --out results_track_a/runs.jsonl
 python -m track_a.run_agents --agent dry_run --limit 3
 
-# 3. re-audit the logged runs through the frozen oracle
+# 3. re-audit the logged runs through the current oracle (writes *_rescored.jsonl)
 python -m track_a.rescore --runs results_track_a/runs.jsonl
 ```
 
-Downstream analysis: `summarize` (pass / scope-violation rates + bootstrap CIs per
-granularity), `compare` (P1 vs P4 / cross-agent), and `compute_collateral_fpr`.
-Human-agreement utilities: `sample_units` + `render_sheet` + `make_smoke_labels`
-build a labeling sheet from sampled units, and `compute_kappa` reports oracle↔human
-Cohen's κ. `demo_card` renders a standalone demo metric card. Each tool supports
-`--help` for its flags.
+### Analysis
+```bash
+# point-estimate table + bootstrap 95% CIs per granularity
+python -m track_a.summarize --runs results_track_a/runs_rescored.jsonl
+
+# paired per-problem diff between two run files (baseline --a vs comparison --b)
+python -m track_a.compare --a baseline_rescored.jsonl --b treatment_rescored.jsonl \
+    --field scope_violation_rate --policy P4 --gran unit
+
+# collateral false-positive rate of the naive P1 checker vs the sound P4 oracle
+python -m track_a.compute_collateral_fpr --runs results_track_a/runs_rescored.jsonl
+```
+
+### Human-agreement (Phase 5)
+```bash
+# stratified, oracle-blind sample of edit units -> labeling sheet
+python -m track_a.sample_units --runs results_track_a/runs_rescored.jsonl \
+    --data ./canitedit/canitedit_test.jsonl
+
+# render the human packet + fill-in CSV (later: --collect <filled.csv> to gather labels)
+python -m track_a.render_sheet
+
+# (optional) synthetic smoke labels to dry-run the kappa pipeline
+python -m track_a.make_smoke_labels            # positional: [src] [out]
+
+# oracle <-> human Cohen's kappa (+ true collateral-FPR when --runs is given)
+python -m track_a.compute_kappa --labels labels_track_a/human_labels.jsonl \
+    --sample labels_track_a/sample_units.jsonl --runs results_track_a/runs_rescored.jsonl
+
+# one clean metric card for a single model under a policy
+python -m track_a.demo_card --runs results_track_a/runs_rescored.jsonl --policy P4
+```
+
+Every tool supports `--help` (except `make_smoke_labels`, which takes optional positional `[src] [out]`).
 
 **Phase 0 acceptance:** a teammate can clone and run the frozen suite end-to-end from this README alone; zero unverified citation IDs in shared docs.
 
