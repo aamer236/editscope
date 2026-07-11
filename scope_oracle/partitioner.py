@@ -106,11 +106,18 @@ def _primary_source(repo_before: RepoBefore) -> tuple[str, str]:
         relpath = sorted(repo_before)[0]
         return (relpath, repo_before[relpath])
     if isinstance(repo_before, str):
-        p = Path(repo_before)
-        if len(repo_before) < 4096 and p.exists() and p.is_file():
-            return (p.name, p.read_text(encoding="utf-8"))
+
+        try:
+            p = Path(repo_before)
+    
+            if p.exists() and p.is_file():
+                return (p.name, p.read_text(encoding="utf-8"))
+    
+        except (OSError, ValueError):
+            # repo_before is almost certainly raw source code, not a filesystem path
+            pass
+    
         return ("candidate.py", repo_before)
-    raise TypeError(f"unsupported repo_before type: {type(repo_before)!r}")
 
 
 def _apply_unified(before: str, patch: str, relpath: str) -> str:
