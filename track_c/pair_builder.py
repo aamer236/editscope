@@ -14,9 +14,8 @@ from __future__ import annotations
 import json
 from typing import List
 
-from candidate_generator import Candidate, CandidateGenerator
-from reward import EditScopeReward
-
+from .candidate_generator import Candidate, CandidateGenerator
+from .reward import EditScopeReward
 
 class PairBuilder:
 

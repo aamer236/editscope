@@ -127,7 +127,8 @@ class EditScopeReward:
             * summary["metric_card"]["extra_edit_blocks"]
         )
 
-        reward = max(-1.0, min(1.0, reward))
+ sys.path.append("/kaggle/working/editscope_dpo")
+       reward = max(-1.0, min(1.0, reward))
 
         return reward
 
