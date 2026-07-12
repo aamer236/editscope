@@ -1,35 +1,41 @@
 """
-run_dpo_data.py
+test_dpo.py
 
-Generate DPO preference pairs using:
+Smoke test for the Track C DPO data pipeline.
 
-CanItEdit
-        ↓
-Candidate Generator
-        ↓
-EditScope Oracle
-        ↓
-Preference Pairs
-        ↓
-JSONL
+Runs the full CanItEdit -> candidate generator -> EditScope oracle ->
+preference-pair path on a SMALL number of problems (MAX_PROBLEMS) so you can
+confirm the pipeline imports and runs end-to-end before committing a GPU node
+to the full 105-problem run in run_dpo_data.py.
+
+Writes to a separate output file so it never clobbers the real dpo_pairs.jsonl.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import sys
 
 from datasets import load_dataset
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-)
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from track_c.candidate_generator import CandidateGenerator
+from track_c.pair_builder import PairBuilder
+from track_c.reward import EditScopeReward
 
-from candidate_generator import CandidateGenerator
-from pair_builder import PairBuilder
-from reward import EditScopeReward
+import random
+import numpy as np
+import torch
+from transformers import set_seed
+
+SEED = 20260625
+
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+set_seed(SEED)
+
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(SEED)
 
 
 # ============================================================
@@ -40,9 +46,11 @@ MODEL_NAME = "Qwen/Qwen2.5-Coder-7B-Instruct"
 
 NUM_CANDIDATES = 8
 
-OUTPUT_FILE = "dpo_pairs.jsonl"
+OUTPUT_FILE = "dpo_pairs_smoke.jsonl"
 
-MAX_PROBLEMS = 15      # set to an integer for debugging
+MAX_PROBLEMS = 2        # smoke test only; run_dpo_data.py does the full 105
+
+DATASET_REVISION = "3c07f38b1f9385f3214fcea94d4664c79df0d36a"
 
 
 # ============================================================
@@ -73,8 +81,8 @@ generator = CandidateGenerator(
 reward_model = EditScopeReward()
 
 builder = PairBuilder(
-    generator,
-    reward_model,
+    generator=generator,
+    reward_model=reward_model,
 )
 
 
@@ -88,7 +96,7 @@ print("=" * 80)
 
 dataset = load_dataset(
     "nuprl/CanItEdit",
-    revision="3c07f38b1f9385f3214fcea94d4664c79df0d36a",
+    revision=DATASET_REVISION,
     split="test",
 )
 
@@ -96,11 +104,12 @@ print(dataset)
 
 
 # ============================================================
-# Generate preference data
+# Generate (smoke)
 # ============================================================
 
 total_pairs = 0
 processed = 0
+failed = 0
 
 with open(OUTPUT_FILE, "w") as f:
 
@@ -147,21 +156,25 @@ with open(OUTPUT_FILE, "w") as f:
 
             total_pairs += len(pairs)
 
-        except Exception as e:
+        except Exception:
 
-             import traceback
-            
-             print("=" * 80)
-             traceback.print_exc()
-             print("=" * 80)
+            failed += 1
+
+            import traceback
+
+            print("=" * 80)
+            traceback.print_exc()
+            print("=" * 80)
+
         processed += 1
 
 
 print()
 print("=" * 80)
-print("Finished!")
+print("Smoke test finished!")
 print("=" * 80)
 
 print(f"Problems processed : {processed}")
+print(f"Problems failed    : {failed}")
 print(f"Preference pairs   : {total_pairs}")
 print(f"Saved to           : {OUTPUT_FILE}")

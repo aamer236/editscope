@@ -62,7 +62,7 @@ MAX_PROBLEMS = None     # None -> full dataset (all 105 problems)
 
 DATASET_REVISION = "3c07f38b1f9385f3214fcea94d4664c79df0d36a"
 
-GIT_SHA = "cfe411ad52946cfc2d53d4a199daa4b5ea8209a9"
+GIT_SHA = "6a6753df5cd0e9cf98ee5cebe858736de4132498"   # commit the run is generated from; bump if you commit more code before the GPU run
 # ============================================================
 # Load model
 # ============================================================
