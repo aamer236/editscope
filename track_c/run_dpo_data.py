@@ -58,11 +58,11 @@ NUM_CANDIDATES = 8
 
 OUTPUT_FILE = "dpo_pairs.jsonl"
 
-MAX_PROBLEMS = 1        # None -> full dataset
+MAX_PROBLEMS = None     # None -> full dataset (all 105 problems)
 
 DATASET_REVISION = "3c07f38b1f9385f3214fcea94d4664c79df0d36a"
 
-GIT_SHA = "YOUR_COMMIT_HASH"
+GIT_SHA = "cfe411ad52946cfc2d53d4a199daa4b5ea8209a9"
 # ============================================================
 # Load model
 # ============================================================
