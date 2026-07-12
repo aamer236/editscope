@@ -62,7 +62,32 @@ MAX_PROBLEMS = None     # None -> full dataset (all 105 problems)
 
 DATASET_REVISION = "3c07f38b1f9385f3214fcea94d4664c79df0d36a"
 
-GIT_SHA = "6a6753df5cd0e9cf98ee5cebe858736de4132498"   # commit the run is generated from; bump if you commit more code before the GPU run
+
+def _resolve_git_sha() -> str:
+    """Resolve the current commit SHA at runtime via `git rev-parse HEAD`.
+
+    Provenance then always records the exact commit the run was generated
+    from -- no manual bumping, so it can never drift behind HEAD. Falls back
+    to "unknown-nogit" if git / the .git dir is unavailable (e.g. a Kaggle
+    upload with no version history).
+    """
+    import subprocess
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[1]
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL,
+        )
+        return out.decode().strip()
+    except Exception:
+        return "unknown-nogit"
+
+
+GIT_SHA = _resolve_git_sha()   # resolved at runtime; never needs manual bumping
+print(f"GIT_SHA = {GIT_SHA}")
 # ============================================================
 # Load model
 # ============================================================
