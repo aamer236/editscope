@@ -23,16 +23,29 @@ import traceback
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-sys.path.append("/kaggle/working/editscope_dpo")
-
 print("=" * 80)
 print("RUN_DPO_DATA VERSION 4")
 print(__file__)
 print("=" * 80)
 
-from candidate_generator import CandidateGenerator
-from pair_builder import PairBuilder
-from reward import EditScopeReward
+from track_c.candidate_generator import CandidateGenerator
+from track_c.pair_builder import PairBuilder
+from track_c.reward import EditScopeReward
+
+import random
+import numpy as np
+import torch
+from transformers import set_seed
+
+SEED = 20260625
+
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+set_seed(SEED)
+
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(SEED)
 
 
 # ============================================================
@@ -47,7 +60,9 @@ OUTPUT_FILE = "dpo_pairs.jsonl"
 
 MAX_PROBLEMS = 1        # None -> full dataset
 
+DATASET_REVISION = "3c07f38b1f9385f3214fcea94d4664c79df0d36a"
 
+GIT_SHA = "YOUR_COMMIT_HASH"
 # ============================================================
 # Load model
 # ============================================================
@@ -91,6 +106,7 @@ print("=" * 80)
 
 dataset = load_dataset(
     "nuprl/CanItEdit",
+    revision="3c07f38b1f9385f3214fcea94d4664c79df0d36a",
     split="test",
 )
 
@@ -146,6 +162,10 @@ with open(OUTPUT_FILE, "w") as f:
 
                 pair["problem_id"] = sample["id"]
                 pair["taxonomy"] = sample["taxonomy"]
+                pair["model"] = MODEL_NAME
+                pair["seed"] = SEED
+                pair["dataset_revision"] = DATASET_REVISION
+                pair["git_sha"] = GIT_SHA
 
                 f.write(json.dumps(pair))
                 f.write("\n")

@@ -26,7 +26,6 @@ from transformers import (
     AutoTokenizer,
 )
 
-sys.path.append("/kaggle/working/editscope_dpo")
 
 from candidate_generator import CandidateGenerator
 from pair_builder import PairBuilder
@@ -89,6 +88,7 @@ print("=" * 80)
 
 dataset = load_dataset(
     "nuprl/CanItEdit",
+    revision="3c07f38b1f9385f3214fcea94d4664c79df0d36a",
     split="test",
 )
 
