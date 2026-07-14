@@ -15,6 +15,12 @@ JSONL
 """
 
 from __future__ import annotations
+import os
+import sys
+
+# Add the repository root to Python's search path
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, REPO_ROOT)
 
 import json
 import sys
