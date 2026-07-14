@@ -28,9 +28,9 @@ print("RUN_DPO_DATA VERSION 4")
 print(__file__)
 print("=" * 80)
 
-from track_c.candidate_generator import CandidateGenerator
-from track_c.pair_builder import PairBuilder
-from track_c.reward import EditScopeReward
+from candidate_generator import CandidateGenerator
+from pair_builder import PairBuilder
+from reward import EditScopeReward
 
 import random
 import numpy as np
