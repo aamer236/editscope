@@ -15,4 +15,8 @@ dependencies = ["pyflakes==3.4.0", "mypy==2.1.0"]
 # cie_harness/ are intentionally NOT packaged: they are
 # experiment scaffolding, not part of the frozen oracle API.
 [tool.setuptools]
-packages = ["scope_oracle", "scope_oracle.tests"]
+packages = [
+    "scope_oracle",
+    "scope_oracle.tests",
+    "track_c"
+]
