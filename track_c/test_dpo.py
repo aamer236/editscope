@@ -18,9 +18,9 @@ import json
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from track_c.candidate_generator import CandidateGenerator
-from track_c.pair_builder import PairBuilder
-from track_c.reward import EditScopeReward
+from candidate_generator import CandidateGenerator
+from pair_builder import PairBuilder
+from reward import EditScopeReward
 
 import random
 import numpy as np
