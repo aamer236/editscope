@@ -1,0 +1,27 @@
+# Convenience wrapper around the EditScope image.
+#   docker compose run --rm editscope     # frozen soundness suite (default)
+#   docker compose run --rm parity        # CanItEdit parity (needs ./canitedit)
+#   docker compose run --rm track-a       # dry-run Track A (no key needed)
+# For live Groq models, export GROQ_API_KEY in your shell first.
+services:
+  editscope:
+    build: .
+    image: editscope:0.1.0
+    command: ["freeze"]
+
+  parity:
+    build: .
+    image: editscope:0.1.0
+    command: ["parity", "--limit", "102"]
+    volumes:
+      - ./canitedit:/data/canitedit:ro
+
+  track-a:
+    build: .
+    image: editscope:0.1.0
+    command: ["track-a", "--agent", "dry_run", "--limit", "3"]
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+    volumes:
+      - ./canitedit:/data/canitedit:ro
+      - ./results_track_a:/app/results_track_a

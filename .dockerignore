@@ -1,0 +1,27 @@
+# Keep the build context small and deterministic.
+.git
+.github
+.venv
+venv
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+
+# Generated / experiment outputs - never bake these into the image
+canitedit/
+results_track_a/
+labels_track_a/
+reports/
+*.log
+
+# Local editor / OS cruft
+.DS_Store
+.idea/
+.vscode/
+
+# Docs not needed inside the image (README.md IS needed by pyproject, keep it)
+DOCKER.md
