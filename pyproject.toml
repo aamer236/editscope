@@ -7,7 +7,7 @@ name = "editscope"
 version = "0.1.0"
 description = "EditScope: a sound, abstaining, instruction-conditioned scope oracle for AI coding agents"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = ["pyflakes==3.4.0", "mypy==2.1.0"]
 
